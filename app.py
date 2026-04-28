@@ -469,19 +469,16 @@ def api_servers(ep_token):
 def api_source(link_id):
     res = resolve_source(link_id)
     if isinstance(res, tuple):
-        data = res[0]    # <--- Add 4 spaces here
+        data = res[0]
     else:
-        data = res       # <--- Add 4 spaces here
+        data = res
 
     if "error" in data:
         return jsonify(data), 500
     else:
         return jsonify({"success": True, **data})
 
-if "error" in data:
-    return jsonify(data), 500
-else:
-    return jsonify({"success": True, **data})
+# Make sure there is NO floating code here!
 
 if __name__ == "__main__":
     import os
