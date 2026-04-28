@@ -3,6 +3,7 @@ from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import json as _json
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -97,9 +98,7 @@ def scrape_most_searched():
         response = requests.get(ANIMEKAI_URL, headers=HEADERS, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
-        most_searched_div = soup.find("div", class_="most_searched")
-        if not most_searched_div:
-            most_searched_div = soup.find("div", class_="most-searched")
+        most_searched_div = soup.find("div", class_="most_searched") or soup.find("div", class_="most-searched")
 
         if not most_searched_div:
             return {"error": "Could not find most-searched section"}, 404
@@ -397,9 +396,20 @@ def resolve_source(link_id):
         embed_url = embed_data.get("url", "")
         if not embed_url: return {"error": "No embed URL found"}, 500
 
+        # FIX: Bypass 403 Forbidden by adding proper Referer and Origin
         video_id = embed_url.rstrip("/").split("/")[-1]
         embed_base = embed_url.rsplit("/e/", 1)[0] if "/e/" in embed_url else embed_url.rsplit("/", 1)[0]
-        media_resp = requests.get(f"{embed_base}/media/{video_id}", headers=HEADERS, timeout=15)
+        
+        MEDIA_HEADERS = {
+            **HEADERS,
+            "Referer": embed_url,
+            "Origin": embed_base,
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+        }
+
+        media_resp = requests.get(f"{embed_base}/media/{video_id}", headers=MEDIA_HEADERS, timeout=15)
         media_resp.raise_for_status()
         encrypted_media = media_resp.json().get("result", "")
 
@@ -421,7 +431,7 @@ def index():
     return jsonify({
         "success": True,
         "api": "Anime Kai REST API",
-        "version": "1.1.0",
+        "version": "1.1.1",
         "endpoints": {
             "/api/home": "Get banner, latest updates, and trending",
             "/api/most-searched": "Get most-searched anime keywords",
@@ -478,9 +488,6 @@ def api_source(link_id):
     else:
         return jsonify({"success": True, **data})
 
-# Make sure there is NO floating code here!
-
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
