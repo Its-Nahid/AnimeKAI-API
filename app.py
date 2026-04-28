@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import requests
+# We use curl_cffi to bypass TLS fingerprinting (403 errors)
+from curl_cffi import requests
 from bs4 import BeautifulSoup
 import json as _json
 import os
@@ -19,6 +20,7 @@ ENCDEC_URL = "https://enc-dec.app/api/enc-kai"
 ENCDEC_DEC_KAI = "https://enc-dec.app/api/dec-kai"
 ENCDEC_DEC_MEGA = "https://enc-dec.app/api/dec-mega"
 
+# Standard headers for general requests
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -49,6 +51,7 @@ def _finalize_io_v4(r):
 
 def encode_token(text):
     try:
+        # Standard requests (curl_cffi)
         r = requests.get(ENCDEC_URL, params={"text": text}, timeout=15)
         r.raise_for_status()
         data = r.json()
@@ -67,10 +70,11 @@ def decode_kai(text):
 
 def decode_mega(text):
     try:
+        # Impersonating Chrome for the decryption API call
         r = requests.post(ENCDEC_DEC_MEGA, json={
             "text": text,
             "agent": HEADERS["User-Agent"],
-        }, timeout=15)
+        }, impersonate="chrome120", timeout=15)
         r.raise_for_status()
         data = r.json()
         return data.get("result") if data.get("status") == 200 else None
@@ -290,10 +294,11 @@ def scrape_anime_info(slug):
         for div in soup.select(".detail > div > div"):
             text = div.get_text(separator="|", strip=True)
             if ":" in text:
-                k, v = text.split(":", 1)
-                k = k.strip().lower().replace(" ", "_").replace(":", "")
+                parts = text.split(":", 1)
+                k = parts[0].strip().lower().replace(" ", "_").replace(":", "")
+                v = parts[1].strip().strip("|")
                 links = div.select("span a")
-                detail[k] = [a.get_text(strip=True) for a in links] if links else v.strip().strip("|")
+                detail[k] = [a.get_text(strip=True) for a in links] if links else v
 
         seasons = []
         for s in soup.select(".swiper-wrapper.season .aitem"):
@@ -387,6 +392,7 @@ def resolve_source(link_id):
         encoded = encode_token(link_id)
         if not encoded: return {"error": "Token encryption failed"}, 500
 
+        # Initial link view request
         resp = requests.get(ANIMEKAI_LINKS_VIEW_URL, params={"id": link_id, "_": encoded}, headers=AJAX_HEADERS, timeout=15)
         resp.raise_for_status()
         encrypted_result = resp.json().get("result", "")
@@ -396,7 +402,7 @@ def resolve_source(link_id):
         embed_url = embed_data.get("url", "")
         if not embed_url: return {"error": "No embed URL found"}, 500
 
-        # FIX: Bypass 403 Forbidden by adding proper Referer and Origin
+        # Constructing base and media URL
         video_id = embed_url.rstrip("/").split("/")[-1]
         embed_base = embed_url.rsplit("/e/", 1)[0] if "/e/" in embed_url else embed_url.rsplit("/", 1)[0]
         
@@ -404,12 +410,14 @@ def resolve_source(link_id):
             **HEADERS,
             "Referer": embed_url,
             "Origin": embed_base,
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
         }
 
-        media_resp = requests.get(f"{embed_base}/media/{video_id}", headers=MEDIA_HEADERS, timeout=15)
+        # CRITICAL: Using impersonate="chrome120" to bypass 403 Forbidden
+        media_resp = requests.get(f"{embed_base}/media/{video_id}", 
+                                  headers=MEDIA_HEADERS, 
+                                  impersonate="chrome120", 
+                                  timeout=15)
         media_resp.raise_for_status()
         encrypted_media = media_resp.json().get("result", "")
 
@@ -431,10 +439,9 @@ def index():
     return jsonify({
         "success": True,
         "api": "Anime Kai REST API",
-        "version": "1.1.1",
+        "version": "1.1.2",
         "endpoints": {
             "/api/home": "Get banner, latest updates, and trending",
-            "/api/most-searched": "Get most-searched anime keywords",
             "/api/search?keyword=...": "Search anime",
             "/api/anime/<slug>": "Get anime details and ani_id",
             "/api/episodes/<ani_id>": "Get episode list and ep tokens",
