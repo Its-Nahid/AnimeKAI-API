@@ -469,10 +469,14 @@ def api_servers(ep_token):
 def api_source(link_id):
     res = resolve_source(link_id)
     if isinstance(res, tuple):
-    if isinstance(res, tuple):
-        data = res[0]    # <--- This must have 4 extra spaces/1 tab
+        data = res[0]    # <--- Add 4 spaces here
     else:
-        data = res       # <--- This must have 4 extra spaces/1 tab
+        data = res       # <--- Add 4 spaces here
+
+    if "error" in data:
+        return jsonify(data), 500
+    else:
+        return jsonify({"success": True, **data})
 
 if "error" in data:
     return jsonify(data), 500
